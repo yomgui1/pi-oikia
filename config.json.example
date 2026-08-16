@@ -1,0 +1,8 @@
+{
+  "tiers": {
+    "read": true,
+    "control": true,
+    "write": false,
+    "admin": false
+  }
+}
