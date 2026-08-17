@@ -1,12 +1,11 @@
 # Changelog — pi-oikia
 
-## v0.1.2
+## Unreleased
 
-- README: add github url for installation
-
-## v0.1.1
-
-- README: updated install and setup instructions
+- **Lazy connection init** — WS connection is deferred to the first tool call instead of failing at session_start. Extension tools are registered immediately; connection happens on first use with retry.
+- **Connection retry with backoff** — `send()` retries up to 3 times with exponential backoff (1s, 2s, 4s). Invalid tokens are not retried.
+- **WebSocket keepalive** — Ping sent every 15s to prevent HA from closing idle connections (~30s timeout). Dead connections are detected via pong timeout (8s) and force a reconnect.
+- **searchEntities lazy state fetch** — `searchEntities` now fetches states on first call instead of requiring `getStates()` to be called manually.
 
 ## v0.1.0
 

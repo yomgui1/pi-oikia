@@ -90,28 +90,56 @@ export class HaClient {
   private authed = false;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private pendingEvents = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-  private readonly config: HaClientConfig;
+  private readonly _config: HaClientConfig;
   private _lastStates: EntityState[] | null = null;
 
+  // Keepalive / reconnect
+  private _keepalive: NodeJS.Timeout | null = null;
+  private _pongTimer: NodeJS.Timeout | null = null;
+  private _expectingPong = false;
+  private _closing = false;
+
   constructor(config: HaClientConfig) {
-    this.config = config;
+    this._config = config;
   }
 
-  async connect() {
+  /** Whether a live WS connection is established. */
+  get connected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+  get config(): HaClientConfig { return this._config; }
+
+  async connect(): Promise<void> {
+    if (this._closing) throw new Error("Client is closing");
     if (this.ws?.readyState === WebSocket.OPEN) return;
+
+    // Reset state for reconnection
+    this.authed = false;
+    this.id = 1;
+    this._stopKeepalive();
+    if (this.ws) {
+      this.ws.removeAllListeners();
+      this.ws = null;
+    }
 
     await new Promise<void>((resolve, reject) => {
       this.ws = new WebSocket(this.config.url, { agent: insecureAgent });
       const authTimeout = setTimeout(() => {
         this.ws?.close();
+        this.ws = null;
         reject(new Error("HA auth timed out — check URL and token"));
       }, 10_000);
 
       this.ws.on("open", () => {
-        this.ws.on("close", () => {
+        this.ws?.on("close", () => {
           clearTimeout(authTimeout);
-          for (const [, { reject }] of this.pending) reject(new Error("Disconnected"));
-          this.pending.clear();
+          this._stopKeepalive();
+          this.authed = false;
+          if (!this._closing) {
+            for (const [, { reject }] of this.pending) reject(new Error("Disconnected — will reconnect"));
+            this.pending.clear();
+          }
+          this.ws = null;
         });
       });
 
@@ -124,39 +152,82 @@ export class HaClient {
           return;
         }
         if (msg.type === "auth_ok") {
+          clearTimeout(authTimeout);
           this.authed = true;
+          this._startKeepalive();
           resolve();
           return;
         }
         if (msg.type === "auth_invalid") {
           this.ws?.close();
+          this.ws = null;
           reject(new Error("Invalid access token"));
           return;
         }
         this.handleMessage(raw);
       });
 
-      this.ws.on("error", reject);
+      this.ws.on("pong", () => {
+        this._expectingPong = false;
+        if (this._pongTimer) {
+          clearTimeout(this._pongTimer);
+          this._pongTimer = null;
+        }
+      });
+
+      this.ws.on("error", (err) => {
+        clearTimeout(authTimeout);
+        this._stopKeepalive();
+        // If auth hasn't completed yet, propagate the error
+        if (!this.authed) {
+          this.ws?.close();
+          this.ws = null;
+          reject(err);
+        }
+        // Otherwise close handler will clean up pending requests
+      });
     });
   }
 
   async send<T extends Record<string, unknown>>(type: string, payload?: T): Promise<unknown> {
-    await this.connect();
+    // Retry loop with exponential backoff: initial + 3 retries (1s, 2s, 4s)
+    let lastErr: Error | undefined;
+    const maxDelay = 4000;
+    for (let attempt = 0, delay = 1000; attempt <= 3; attempt++, delay = Math.min(delay * 2, maxDelay)) {
+      try {
+        await this.connect();
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error("WebSocket not open");
 
-    const id = this.id++;
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Command ${type} timed out`));
-      }, 30_000);
+        const id = this.id++;
+        const result = await new Promise<unknown>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            this.pending.delete(id);
+            reject(new Error(`Command ${type} timed out`));
+          }, 30_000);
 
-      this.pending.set(id, {
-        resolve: (v) => { clearTimeout(timeout); this.pending.delete(id); resolve(v); },
-        reject: (e) => { clearTimeout(timeout); this.pending.delete(id); reject(e); },
-      });
+          this.pending.set(id, {
+            resolve: (v) => { clearTimeout(timeout); this.pending.delete(id); resolve(v); },
+            reject: (e) => { clearTimeout(timeout); this.pending.delete(id); reject(e); },
+          });
 
-      this.ws!.send(JSON.stringify({ id, type, ...payload }));
-    });
+          this.ws!.send(JSON.stringify({ id, type, ...payload }));
+        });
+        return result;
+      } catch (err) {
+        lastErr = err instanceof Error ? err : new Error(String(err));
+        // Don't retry on invalid token
+        if (lastErr.message.includes("Invalid access token")) throw lastErr;
+        if (attempt < 3) {
+          // Reset connection state so connect() will create a new socket
+          this.ws?.removeAllListeners();
+          this.ws?.close();
+          this.ws = null;
+          this.authed = false;
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastErr ?? new Error(`Command ${type} failed after retries`);
   }
 
   private handleMessage(raw: string) {
@@ -196,7 +267,48 @@ export class HaClient {
     }
   }
 
-  close() {
+  private _startKeepalive(): void {
+    this._stopKeepalive();
+    // HA closes idle WS after ~30s. Ping every 15s.
+    this._keepalive = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this._stopKeepalive();
+        return;
+      }
+      try {
+        this.ws.ping(Buffer.from("keepalive"));
+      } catch {
+        this._stopKeepalive();
+        return;
+      }
+      this._expectingPong = true;
+      if (this._pongTimer) clearTimeout(this._pongTimer);
+      this._pongTimer = setTimeout(() => {
+        if (this._expectingPong) {
+          // No pong received — connection is dead, force reconnect
+          this._stopKeepalive();
+          this.ws?.terminate();
+          this.ws = null;
+          this.authed = false;
+          // Reject pending requests so send() will retry
+          for (const [, { reject }] of this.pending) reject(new Error("Ping timeout — reconnecting"));
+          this.pending.clear();
+        }
+      }, 8000);
+    }, 15000);
+    // Prevent keepalive timer from keeping process alive
+    if (this._keepalive.unref) this._keepalive.unref();
+  }
+
+  private _stopKeepalive(): void {
+    if (this._keepalive) { clearInterval(this._keepalive); this._keepalive = null; }
+    if (this._pongTimer) { clearTimeout(this._pongTimer); this._pongTimer = null; }
+    this._expectingPong = false;
+  }
+
+  close(): void {
+    this._closing = true;
+    this._stopKeepalive();
     for (const [, { reject }] of this.pendingEvents) reject(new Error("Closed"));
     this.pendingEvents.clear();
     this.ws?.close();
@@ -221,9 +333,8 @@ export class HaClient {
     return this._lastStates;
   }
 
-  searchEntities(query: string): SearchEntityResult[] {
-    const states = this._lastStates;
-    if (!states) throw new Error("No cached states — call getStates() first");
+  async searchEntities(query: string): Promise<SearchEntityResult[]> {
+    const states = this._lastStates ??= await this.getStates();
     const queryLower = query.toLowerCase();
     const terms = queryLower.split(/\s+/);
 
@@ -306,7 +417,7 @@ export class HaClient {
     throw new Error("No log source available (error_log add-on not present, logbook empty)");
   }
 
-  async getEntityState(entityId: string): Promise<EntityState | { state: "unavailable" }> {
+  async getEntityState(entityId: string): Promise<EntityState | { state: "no_found" }> {
     await this.connect();
     const restUrl = this.getRestUrl(`/api/states/${entityId}`);
     const resp = await fetch(restUrl, {

@@ -1,6 +1,6 @@
 {
   "name": "pi-oikia",
-  "version": "0.1.2",
+  "version": "0.1.0",
   "type": "module",
   "description": "Home Assistant integration for PI — typed tools, code-enforced permissions, no shell access.",
   "main": "src/index.ts",
@@ -13,7 +13,11 @@
   "pi": {
     "extensions": ["./src/index.ts"]
   },
+  "omp": {
+    "extensions": ["./src/index.ts"]
+  },
   "dependencies": {
+    "typebox": "^1.0.0",
     "ws": "^8.18.0"
   }
 }

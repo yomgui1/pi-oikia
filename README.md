@@ -1,7 +1,6 @@
 # pi-oikia
 
-A [Pi](https://github.com/earendil-works/pi) extension to control your Home Assistant.
-
+A [Pi](https://github.com/earendil-works/pi) / [Oh My Pi](https://github.com/ollama-hub/oh-my-pi) extension to control your Home Assistant.
 **The agent gets tools, not a shell!**
 
 **17 tools** across 4 permission tiers. Connect to HA over WebSocket with a scoped Long-Lived Access Token.
@@ -20,6 +19,8 @@ _Take a quick look to [DESIGN.md](DESIGN.md) if you are interested in the histor
 
 ## Install
 
+### Pi
+
 ```bash
 # Automatic
 pi install git:github.com/yomgui1/pi-oikia
@@ -29,6 +30,17 @@ mkdir -p ~/.pi/agent/extensions/pi-oikia
 cp -r src package.json node_modules ~/.pi/agent/extensions/pi-oikia/
 ```
 
+### Oh My Pi (OMP)
+
+```bash
+# Automatic (if supported)
+omp install git:github.com/yomgui1/pi-oikia
+
+# Or manual
+mkdir -p ~/.omp/agent/extensions/pi-oikia
+cp -r src package.json node_modules ~/.omp/agent/extensions/pi-oikia/
+```
+
 ## Setup
 
 pi-oikia needs the two environment variables `HASS_URL` and `HASS_TOKEN`:
@@ -36,15 +48,21 @@ pi-oikia needs the two environment variables `HASS_URL` and `HASS_TOKEN`:
 1. Create a HA API token from your HA instance: Settings → Users → Create token
 2. Choose where to set your credentials:
    
-   **Local install** — create `~/.pi/agent/extensions/pi-oikia/.env`:
+   **Pi (local)** — create `~/.pi/agent/extensions/pi-oikia/.env`:
    ```
    HASS_URL=wss://your-ha-host:8123/api/websocket   # default: ws://localhost:8123/api/websocket
    HASS_TOKEN=eyJh...
    ```
    
-   **Docker / CI** — set env vars `HASS_TOKEN` and `HASS_URL` before running `pi`.
+   **OMP (local)** — create `~/.omp/agent/extensions/pi-oikia/.env`:
+   ```
+   HASS_URL=wss://your-ha-host:8123/api/websocket
+   HASS_TOKEN=eyJh...
+   ```
+   
+   **Docker / CI** — set env vars `HASS_TOKEN` and `HASS_URL` before running.
 
-3. Run `pi` — tools register on session start
+3. Run `pi` or `omp` — tools register on session start
 
 ## Tool Tiers
 

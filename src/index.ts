@@ -49,8 +49,10 @@ function loadTierConfig(): { read: boolean; control: boolean; write: boolean; ad
 export default function (pi: ExtensionAPI) {
   let client: HaClient | null = null;
   let shuttingDown = false;
+  let _ctx: ExtensionContext | null = null;
 
   pi.on("session_start", async (_event, ctx) => {
+    _ctx = ctx;
     const url = process.env.HASS_URL ?? "ws://localhost:8123/api/websocket";
     const token = process.env.HASS_TOKEN;
     if (!token) {
@@ -59,30 +61,22 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    // Detect supervisor token (refuse admin-level tokens)
     const segments = token.split(".");
     if (segments.length >= 5) {
       ctx.ui.notify(`${PROJECT_NAME}: token appears to be a Supervisor token — use a user LLAT instead`, "error");
       return;
     }
 
-    try {
-      client = new HaClient({ url, token });
-      await client.connect();
-      ctx.ui.setStatus("ha", `Connected to ${new URL(url).host}`);
-    } catch (err) {
-      ctx.ui.notify(`${PROJECT_NAME}: connection failed: ${err instanceof Error ? err.message : err}`, "error");
-      ctx.ui.setStatus("ha", "Connection failed");
-      return;
-    }
-
-    registerTools(client, ctx);
+    client = new HaClient({ url, token });
+    ctx.ui.setStatus("ha", `Connecting to ${new URL(url).host}`);
+    registerTools(client);
   });
 
   pi.on("session_shutdown", () => {
     shuttingDown = true;
     client?.close();
     client = null;
+    _ctx = null;
   });
 
   // Guard: block built-in tools from accessing protected HA paths
@@ -97,42 +91,53 @@ export default function (pi: ExtensionAPI) {
 
   // ── Tool registration ────────────────────────────────────────────
 
-  function registerTools(client: HaClient, ctx: ExtensionContext) {
+  async function ensureConnected(c: HaClient): Promise<HaClient> {
+    try {
+      await c.connect();
+      _ctx?.ui.setStatus("ha", `Connected to ${new URL(c.config.url).host}`);
+    } catch (err) {
+      _ctx?.ui.setStatus("ha", `Connection failed: ${err instanceof Error ? err.message : err}`);
+      throw err;
+    }
+    return c;
+  }
+
+  function registerTools(c: HaClient) {
     if (shuttingDown) return;
     const tiers = loadTierConfig();
 
     if (tiers.read) {
-      pi.registerTool(makeGetState(client));
-      pi.registerTool(makeGetServices(client));
-      pi.registerTool(makeGetConfig(client));
-      pi.registerTool(makeGetHistory(client));
-      pi.registerTool(makeGetLogbook(client));
-      pi.registerTool(makeGetDevices(client));
-      pi.registerTool(makeGetAreas(client));
-      pi.registerTool(makeGetHomeContext(client));
-      pi.registerTool(makeGetEntityDetails(client));
-      pi.registerTool(makeSearchEntities(client));
-      pi.registerTool(makeGetErrorLog(client));
-      pi.registerTool(makeRenderTemplate(client));
-      pi.registerTool(makeTestCondition(client));
+      pi.registerTool(makeGetState(c));
+      pi.registerTool(makeGetServices(c));
+      pi.registerTool(makeGetConfig(c));
+      pi.registerTool(makeGetHistory(c));
+      pi.registerTool(makeGetLogbook(c));
+      pi.registerTool(makeGetDevices(c));
+      pi.registerTool(makeGetAreas(c));
+      pi.registerTool(makeGetHomeContext(c));
+      pi.registerTool(makeGetEntityDetails(c));
+      pi.registerTool(makeSearchEntities(c));
+      pi.registerTool(makeGetErrorLog(c));
+      pi.registerTool(makeRenderTemplate(c));
+      pi.registerTool(makeTestCondition(c));
     }
 
     if (tiers.control) {
-      pi.registerTool(makeCallService(client));
-      pi.registerTool(makeToggle(client));
-      pi.registerTool(makeFireEvent(client));
-      pi.registerTool(makeExecuteScript(client));
+      pi.registerTool(makeCallService(c));
+      pi.registerTool(makeToggle(c));
+      pi.registerTool(makeFireEvent(c));
+      pi.registerTool(makeExecuteScript(c));
     }
 
     if (tiers.write) {
-      pi.registerTool(makeValidateConfig(client));
-      pi.registerTool(makeGetEntityRegistryEntry(client));
-      pi.registerTool(makeGetDeviceRegistryEntry(client));
-      pi.registerTool(makeToggleDeviceDisabled(client));
+      pi.registerTool(makeValidateConfig(c));
+      pi.registerTool(makeGetEntityRegistryEntry(c));
+      pi.registerTool(makeGetDeviceRegistryEntry(c));
+      pi.registerTool(makeToggleDeviceDisabled(c));
     }
 
     if (tiers.admin) {
-      pi.registerTool(makeSupervisorInfo(client));
+      pi.registerTool(makeSupervisorInfo(c));
     }
   }
 
@@ -371,7 +376,7 @@ export default function (pi: ExtensionAPI) {
       }),
       annotations: { readOnly: true, idempotent: true },
       async execute(_id, params) {
-        const results = client.searchEntities(params.query);
+        const results = await client.searchEntities(params.query);
         if (!results.length) return { content: [{ type: "text", text: `No entities found matching "${params.query}"` }] };
         return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
       },
