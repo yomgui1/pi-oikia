@@ -158,19 +158,17 @@ If a tool without arguments returns unbounded data, it must have a filtered equi
 
 ---
 
-## 9. Security Comparison with Add-on-Based Agents
+## 9. Security Posture
 
-**Note: this comparison reflects the state of other add-on-based agents at the time of writing. Features may have evolved.**
-
-| Criterion | Add-on agent | Add-on agent | `pi-oikia` |
-|---|---|---|---|
-| Runs on | HA host (container) | HA host (container) | User machine |
-| Shell access | Full | Full | **None** |
-| Token | Supervisor (admin) | Supervisor token | **LLAT (scoped, typed)** |
-| Exposed port | HTTP (unauthenticated) | None | **None** |
-| FS scope | Multiple dirs, full rw | /config dir, rw | **None (WS/REST API only)** |
-| Consent | None | Prompt-level (AGENTS.md) | **Code-enforced confirm()** |
-| Internal dirs | Exposed | Prompt-blocked | **Code-blocked** |
-| Secrets | Exposed | Prompt-blocked | **Never exposed** |
-| Tool granularity | 0 (shell) | 3 profiles | **Per-tier (read/control/write/admin)** |
-| Built-in tool guard | N/A | N/A (container isolated) | **tool_call event handler** |
+| Criterion | pi-oikia |
+|---|---|
+| Runs on | User machine |
+| Shell access | **None** |
+| Token | **LLAT (scoped, typed)** |
+| Exposed port | **None** |
+| FS scope | **None (WS/REST API only)** |
+| Consent | **Code-enforced confirm()** |
+| Internal dirs | **Code-blocked** |
+| Secrets | **Never exposed** |
+| Tool granularity | **Per-tier (read/control/write/admin)** |
+| Built-in tool guard | **tool_call event handler** |
