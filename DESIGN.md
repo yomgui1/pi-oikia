@@ -36,7 +36,7 @@ The risk is clear: an add-on compromise gives the attacker direct access to HA's
 │                                               │
 │  ┌─────────────┐          ┌────────────────┐  │
 │  │ PI process  │          │ Home Assistant │  │
-│  │             │ ── WS API─▶               │  │
+│  │             │ ── WS API─▶              │  │
 │  │ pi-oikia    │          │ Token: LLAT    │  │
 │  │ Typed tools │          │ (no FS access) │  │
 │  │ Guard layer │          └────────────────┘  │
