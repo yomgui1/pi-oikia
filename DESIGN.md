@@ -83,12 +83,12 @@ Never in logs, tool output (`ha.get_state` etc), or LLM context. Redacted in err
 
 Each tool declares a tier. Config enables/disables tiers.
 
-| Tier | Default | Confirm | Example tools |
+| Tier | Default | Confirm | Tools |
 |---|---|---|---|
-| `read` | ✅ Always | None | `ha.get_state`, `ha.get_history`, `ha.get_home_context` |
-| `control` | ✅ On | Per-call | `ha.call_service`, `ha.toggle` |
-| `write` | ❌ Off | None | `ha.validate_config`, `ha.toggle_device_disabled` |
-| `admin` | ❌ Off | Per-call | `ha.supervisor_info` |
+| `read` | ✅ Always | None | `get_state`, `get_services`, `get_config`, `get_history`, `get_logbook`, `get_devices`, `get_areas`, `get_home_context`, `get_entity_details`, `search_entities`, `get_error_log`, `render_template`, `test_condition` |
+| `control` | ✅ On | Per-call | `call_service`, `toggle`, `fire_event`, `execute_script` |
+| `write` | ❌ Off | Per-call | `validate_config`, `get_entity_registry_entry`, `get_device_registry_entry`, `toggle_device_disabled` |
+| `admin` | ❌ Off | Per-call | `supervisor_info` |
 
 Disabling a tier hides its tools: the agent cannot call them at all.
 

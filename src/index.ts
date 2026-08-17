@@ -87,6 +87,17 @@ export default function (pi: ExtensionAPI) {
     if (event.toolName === "write" && event.input.path && /\.storage\//.test(event.input.path)) {
       return { block: true, reason: ".storage/ is internal HA state — use ha tools instead" };
     }
+    if (event.toolName === "read" || event.toolName === "write") {
+      if (event.input.path && /\.cloud\//.test(event.input.path)) {
+        return { block: true, reason: ".cloud/ is managed by HA Cloud" };
+      }
+      if (event.input.path && /\/deps\//.test(event.input.path)) {
+        return { block: true, reason: "deps/ is managed by HA Core" };
+      }
+      if (event.input.path && /home-assistant_v2\.db/.test(event.input.path)) {
+        return { block: true, reason: "home-assistant_v2.db is internal HA database" };
+      }
+    }
   });
 
   // ── Tool registration ────────────────────────────────────────────
