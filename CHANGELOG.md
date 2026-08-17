@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-
 ## v0.2.0
 
 - **Lazy connection init** — WS connection is deferred to the first tool call instead of failing at session_start. Extension tools are registered immediately; connection happens on first use with retry.
