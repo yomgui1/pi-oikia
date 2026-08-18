@@ -1,6 +1,11 @@
 # Changelog — pi-oikia
 
-## Unreleased
+## v0.3.0
+
+- **Secure-by-default TLS** — Connection is secure by default. Added `HASS_INSECURE` env var and `config.json.httpInsecure` to opt-in to unverified TLS when running with self-signed certs.
+- **Immediate connection at startup** — WS connection is attempted at session_start with status updates on success/failure (replaces stale "Connecting" display).
+- **Readable error messages** — `ErrorEvent` from WebSocket is unwrapped to expose the actual error string (e.g. "TLS handshake failed" instead of "[object ErrorEvent]").
+- **Documentation** — few minor corrections.
 
 ## v0.2.0
 
