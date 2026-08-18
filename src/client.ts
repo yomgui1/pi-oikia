@@ -1,9 +1,6 @@
 import { WebSocket } from "ws";
 import https from "node:https";
 
-const insecureAgent = new https.Agent({ rejectUnauthorized: false });
-export { insecureAgent };
-
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface EntityState {
@@ -33,6 +30,15 @@ export interface HaConfig {
 export interface HaClientConfig {
   url: string;
   token: string;
+  /**
+   * Allow insecure TLS connections (skip certificate validation).
+   *
+   * SECURITY RISK: with insecure=true the connection is vulnerable
+   * to man-in-the-middle attacks. Only enable when your HA instance
+   * uses a self-signed certificate or a hostname that does not match
+   * the certificate, but you trust your connection. Default: false.
+   */
+  insecure?: boolean;
 }
 
 export interface HomeContextEntity {
@@ -103,6 +109,19 @@ export class HaClient {
     this._config = config;
   }
 
+  /** https.Agent for fetch/WS calls — respects insecure config flag. */
+  protected get _agent(): https.Agent {
+    if (this._config.insecure) {
+      return new https.Agent({ rejectUnauthorized: false });
+    }
+    return https.globalAgent;
+  }
+
+  /** Public accessor for agent, used by index.ts fetch calls. */
+  get agent(): https.Agent {
+    return this._agent;
+  }
+
   /** Whether a live WS connection is established. */
   get connected(): boolean {
     return this.ws?.readyState === WebSocket.OPEN;
@@ -123,7 +142,7 @@ export class HaClient {
     }
 
     await new Promise<void>((resolve, reject) => {
-      this.ws = new WebSocket(this.config.url, { agent: insecureAgent });
+      this.ws = new WebSocket(this.config.url, { agent: this._agent });
       const authTimeout = setTimeout(() => {
         this.ws?.close();
         this.ws = null;
@@ -377,7 +396,7 @@ export class HaClient {
     try {
       const resp = await fetch(this.getRestUrl("/error_log"), {
         headers: { Authorization: `Bearer ${this.config.token}` },
-        agent: () => insecureAgent,
+        agent: () => this._agent,
       });
       if (resp.ok) {
         const text = await resp.text();
@@ -422,7 +441,7 @@ export class HaClient {
     const restUrl = this.getRestUrl(`/api/states/${entityId}`);
     const resp = await fetch(restUrl, {
       headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => insecureAgent,
+      agent: () => this._agent,
     });
     if (resp.status === 404) return { entity_id: entityId, state: "not_found", attributes: {}, last_changed: "", last_updated: "" };
     if (!resp.ok) throw new Error(`HA API ${resp.status}: ${await resp.text()}`);
@@ -466,7 +485,7 @@ export class HaClient {
     });
     const resp = await fetch(`${restUrl}/${start}?${params}`, {
       headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => insecureAgent,
+      agent: () => this._agent,
     });
     if (!resp.ok) throw new Error(`HA API ${resp.status}: ${await resp.text()}`);
     const groupByEntity = (await resp.json()) as HistoryRecord[][];
@@ -519,7 +538,7 @@ export class HaClient {
     if (entityId) params.set("entity", entityId);
     const resp = await fetch(`${restUrl}/${start}?${params}`, {
       headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => insecureAgent,
+      agent: () => this._agent,
     });
     if (!resp.ok) throw new Error(`HA API ${resp.status}: ${await resp.text()}`);
     return resp.json();
@@ -638,7 +657,7 @@ export class HaClient {
   async getEntityRegistryEntry(entityId: string) {
     const resp = await fetch(this.getRestUrl(`/api/config/entity_registry/entries/${encodeURIComponent(entityId)}`), {
       headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => insecureAgent,
+      agent: () => this._agent,
     });
     if (!resp.ok) throw new Error(`Entity registry ${resp.status}: ${await resp.text()}`);
     return resp.json();
@@ -654,7 +673,7 @@ export class HaClient {
       method: "PUT",
       headers: { Authorization: `Bearer ${this.config.token}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      agent: () => insecureAgent,
+      agent: () => this._agent,
     });
     if (!resp.ok) throw new Error(`Entity registry PUT ${resp.status}: ${await resp.text()}`);
 
@@ -665,7 +684,7 @@ export class HaClient {
       try {
         const devResp = await fetch(this.getRestUrl(`/api/config/device_registry/devices/${deviceId}`), {
           headers: { Authorization: `Bearer ${this.config.token}` },
-          agent: () => insecureAgent,
+          agent: () => this._agent,
         });
         if (devResp.ok) {
           const dev = await devResp.json() as Record<string, unknown>;
@@ -686,7 +705,7 @@ export class HaClient {
   async getDeviceRegistryEntry(deviceId: string) {
     const resp = await fetch(this.getRestUrl(`/api/config/device_registry/devices/${deviceId}`), {
       headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => insecureAgent,
+      agent: () => this._agent,
     });
     if (!resp.ok) throw new Error(`Device registry ${resp.status}: ${await resp.text()}`);
     return resp.json();
@@ -702,7 +721,7 @@ export class HaClient {
       method: "PUT",
       headers: { Authorization: `Bearer ${this.config.token}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      agent: () => insecureAgent,
+      agent: () => this._agent,
     });
     if (!resp.ok) throw new Error(`Device registry PUT ${resp.status}: ${await resp.text()}`);
     const updated = await resp.json() as Record<string, unknown>;

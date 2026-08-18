@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { HaClient, insecureAgent } from "./client";
+import { HaClient } from "./client";
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,21 +26,24 @@ const PROJECT_NAME = "pi-oikia";
 // ── Config ─────────────────────────────────────────────────────────
 
 function loadTierConfig(): { read: boolean; control: boolean; write: boolean; admin: boolean } {
-  const defaults = { read: true, control: true, write: false, admin: false };
+  const config = loadFullConfig();
+  const parsed = config.tiers ?? {};
+  return {
+    read: parsed.read ?? true,
+    control: parsed.control ?? true,
+    write: parsed.write ?? false,
+    admin: parsed.admin ?? false,
+  };
+}
+
+function loadFullConfig(): { tiers?: Record<string, boolean>; httpInsecure?: boolean } {
   const configPath = join(__dirname, "..", "config.json");
-  if (!existsSync(configPath)) return defaults;
+  if (!existsSync(configPath)) return {};
   try {
     const raw = readFileSync(configPath, "utf8");
-    const parsed = JSON.parse(raw) as { tiers?: Record<string, boolean> };
-    if (!parsed.tiers) return defaults;
-    return {
-      read: parsed.tiers.read ?? true,
-      control: parsed.tiers.control ?? true,
-      write: parsed.tiers.write ?? false,
-      admin: parsed.tiers.admin ?? false,
-    };
+    return JSON.parse(raw) as { tiers?: Record<string, boolean>; httpInsecure?: boolean };
   } catch {
-    return defaults;
+    return {};
   }
 }
 
@@ -67,7 +70,8 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    client = new HaClient({ url, token });
+    const httpInsecure = process.env.HASS_INSECURE === "1" || process.env.HASS_INSECURE === "true" || loadFullConfig().httpInsecure === true;
+    client = new HaClient({ url, token, insecure: httpInsecure });
     ctx.ui.setStatus("ha", `Connecting to ${new URL(url).host}`);
     registerTools(client);
   });
@@ -494,7 +498,7 @@ export default function (pi: ExtensionAPI) {
         const resp = await fetch(restUrl, {
           method: "POST",
           headers: { Authorization: `Bearer ${client.config.token}` },
-          agent: () => insecureAgent,
+          agent: client.agent,
         });
         if (!resp.ok) throw new Error(`Config validation failed (${resp.status}): ${await resp.text()}`);
         return { content: [{ type: "text", text: "Configuration is valid." }] };
@@ -716,7 +720,7 @@ export default function (pi: ExtensionAPI) {
       async execute() {
         const resp = await fetch(
           client.config.url.replace(/^ws(s)?:\/\//, "http://").replace(/\/api\/websocket$/, "") + "/api/supervisor/info",
-          { headers: { Authorization: `Bearer ${client.config.token}` }, agent: () => insecureAgent }
+          { headers: { Authorization: `Bearer ${client.config.token}` }, agent: client.agent }
         );
         if (resp.status === 404) return { content: [{ type: "text", text: "Not running on Home Assistant OS/Supervisor." }] };
         if (!resp.ok) throw new Error(`Supervisor info failed (${resp.status})`);

@@ -62,6 +62,13 @@ pi-oikia needs the two environment variables `HASS_URL` and `HASS_TOKEN`:
    
    **Docker / CI** — set env vars `HASS_TOKEN` and `HASS_URL` before running.
 
+   **Optional: `HASS_INSECURE`** — set to `1` or `true`, or set `"httpInsecure": true` in
+   `config.json`, to disable TLS certificate validation. You need it when your HA
+   instance has a self-signed certificate or a hostname that does not match the cert, but...
+   **Warning: the connection is vulnerable to man-in-the-middle attacks when enabled.**
+   So use it only on trusted networks!
+   Default: `false` (certificates are validated).
+
 3. Run `pi` or `omp` — tools register on session start
 
 ## Tool Tiers
@@ -88,6 +95,8 @@ Disabling a tier removes its tools — the agent cannot call them at all.
 - **No shell, no filesystem access** — only WS/REST API calls
 - **Code-enforced guards** block secrets.yaml, .storage/, .cloud/, deps/
 - All destructive actions are **confirm-gated**
+- TLS certificate validation is **enforced by default**. `httpInsecure: true` disables it
+  (see [Setup](#setup)) and must never be used on untrusted networks.
 
 ## Testing
 

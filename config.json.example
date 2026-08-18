@@ -4,5 +4,6 @@
     "control": true,
     "write": false,
     "admin": false
-  }
+  },
+  "httpInsecure": false
 }
