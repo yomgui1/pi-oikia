@@ -201,7 +201,7 @@ export class HaClient {
         if (!this.authed) {
           this.ws?.close();
           this.ws = null;
-          reject(err);
+          reject(new Error(typeof err.message === "string" ? err.message : "TLS handshake failed"));
         }
         // Otherwise close handler will clean up pending requests
       });

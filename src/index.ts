@@ -72,7 +72,18 @@ export default function (pi: ExtensionAPI) {
 
     const httpInsecure = process.env.HASS_INSECURE === "1" || process.env.HASS_INSECURE === "true" || loadFullConfig().httpInsecure === true;
     client = new HaClient({ url, token, insecure: httpInsecure });
-    ctx.ui.setStatus("ha", `Connecting to ${new URL(url).host}`);
+
+    const host = new URL(url).host;
+    ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connecting`);
+    (async () => {
+      try {
+        await client!.connect();
+        ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connected`);
+      } catch (err) {
+        ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: ${err instanceof Error ? err.message : "unknown error"}`);
+      }
+    })();
+
     registerTools(client);
   });
 
@@ -107,11 +118,12 @@ export default function (pi: ExtensionAPI) {
   // ── Tool registration ────────────────────────────────────────────
 
   async function ensureConnected(c: HaClient): Promise<HaClient> {
+    const host = new URL(c.config.url).host;
     try {
       await c.connect();
-      _ctx?.ui.setStatus("ha", `Connected to ${new URL(c.config.url).host}`);
+      _ctx?.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connected`);
     } catch (err) {
-      _ctx?.ui.setStatus("ha", `Connection failed: ${err instanceof Error ? err.message : err}`);
+      _ctx?.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: ${err instanceof Error ? err.message : "unknown error"}`);
       throw err;
     }
     return c;
