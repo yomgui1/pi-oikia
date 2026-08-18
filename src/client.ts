@@ -436,7 +436,7 @@ export class HaClient {
     throw new Error("No log source available (error_log add-on not present, logbook empty)");
   }
 
-  async getEntityState(entityId: string): Promise<EntityState | { state: "no_found" }> {
+  async getEntityState(entityId: string): Promise<EntityState | { entity_id: string; state: "not_found"; attributes: {}; last_changed: string; last_updated: string }> {
     await this.connect();
     const restUrl = this.getRestUrl(`/api/states/${entityId}`);
     const resp = await fetch(restUrl, {

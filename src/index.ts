@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { HaClient } from "./client";
-import { existsSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
 
 // Load .env from extension directory for local installs (docker-compose already sets process.env)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -95,22 +95,25 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Guard: block built-in tools from accessing protected HA paths
+  const PROTECTED_PATHS = [
+    [/secrets\.yaml$/, ["read", "write"], "secrets.yaml is protected — never exposed to LLM"],
+    [/\.storage\//, ["write"], ".storage/ is internal HA state — use ha tools instead"],
+    [/\.cloud\//, ["read", "write"], ".cloud/ is managed by HA Cloud"],
+    [/\/deps\//, ["read", "write"], "deps/ is managed by HA Core"],
+    [/\/home-assistant_v2\.db$/, ["read", "write"], "home-assistant_v2.db is internal HA database"],
+  ];
+
   pi.on("tool_call", async (event, _ctx) => {
-    if (event.toolName === "read" && event.input.path && /secrets\.yaml$/.test(event.input.path)) {
-      return { block: true, reason: "secrets.yaml is protected — never exposed to LLM" };
-    }
-    if (event.toolName === "write" && event.input.path && /\.storage\//.test(event.input.path)) {
-      return { block: true, reason: ".storage/ is internal HA state — use ha tools instead" };
-    }
-    if (event.toolName === "read" || event.toolName === "write") {
-      if (event.input.path && /\.cloud\//.test(event.input.path)) {
-        return { block: true, reason: ".cloud/ is managed by HA Cloud" };
+    const { toolName, input } = event;
+    if (input.path) {
+      const resolved = resolve("/config", input.path);
+      if (!resolved.startsWith("/config/")) {
+        return { block: true, reason: `Path resolved outside config directory` };
       }
-      if (event.input.path && /\/deps\//.test(event.input.path)) {
-        return { block: true, reason: "deps/ is managed by HA Core" };
-      }
-      if (event.input.path && /home-assistant_v2\.db/.test(event.input.path)) {
-        return { block: true, reason: "home-assistant_v2.db is internal HA database" };
+      for (const [re, allowed, reason] of PROTECTED_PATHS as Array<[RegExp, string[], string]>) {
+        if (allowed.includes(toolName) && re.test(resolved)) {
+          return { block: true, reason };
+        }
       }
     }
   });
