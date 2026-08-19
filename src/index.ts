@@ -513,6 +513,7 @@ export default function (pi: ExtensionAPI) {
 
   /**
    * Render a Jinja2 template in Home Assistant using the WS API.
+   * Confirm-gated via ctx.ui.confirm.
    * @param template Jinja2 template string using HA template syntax.
    * @returns The rendered string result.
    */
@@ -525,7 +526,12 @@ export default function (pi: ExtensionAPI) {
       parameters: Type.Object({
         template: Type.String({ description: "Jinja2 template string to render" }),
       }),
-      async execute(_id, params) {
+      async execute(_id, params, _signal, _onUpdate, ctx) {
+        const approved = await ctx.ui.confirm(
+          "Render Template",
+          `Render template:\n\`\`\`\n${params.template}\n\`\`\`\n\nConfirm to proceed.`
+        );
+        if (!approved) return { content: [{ type: "text", text: "Template rendering rejected by user." }] };
         return { content: [{ type: "text", text: await client.renderTemplate(params.template) }] };
       },
     };
