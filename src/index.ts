@@ -5,21 +5,7 @@ import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 
-// Load .env from extension directory for local installs (docker-compose already sets process.env)
 const __dirname = dirname(fileURLToPath(import.meta.url));
-(function loadEnv() {
-  const envPath = join(__dirname, "..", ".env");
-  if (!existsSync(envPath)) return;
-  for (const line of readFileSync(envPath, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const idx = trimmed.indexOf("=");
-    if (idx < 0) continue;
-    const key = trimmed.slice(0, idx).trim();
-    const val = trimmed.slice(idx + 1).trim().replace(/^\"|\"$|^'|'$/g, "");
-    if (!process.env[key]) process.env[key] = val;
-  }
-})();
 
 const PROJECT_NAME = "pi-oikia";
 
