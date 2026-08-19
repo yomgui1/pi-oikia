@@ -670,32 +670,28 @@ export class HaClient {
 
   async toggleEntityDisabled(entityId: string):
     Promise<{ entity_id: string; entity_disabled: boolean; device_id: string | null; device_disabled: boolean }> {
-    const entry = await this.getEntityRegistryEntry(entityId) as Record<string, unknown>;
-    const currentDisabled = (entry.disabled_by as string | null) === "user";
-    const payload: Record<string, unknown> = { disabled_by: currentDisabled ? null : "user" };
+    const entry = await this.getEntityRegistryEntry(entityId);
+    const currentDisabled = entry.disabled_by === "user";
+    const newDisabledBy = currentDisabled ? null : "user";
 
-    const resp = await fetch(this.getRestUrl(`/api/config/entity_registry/entries/${encodeURIComponent(entityId)}`), {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${this.config.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      agent: () => this.getAgent(this.getRestUrl("/")),
+    const result = await this.send("config/entity_registry/update", {
+      entity_id: entityId,
+      disabled_by: newDisabledBy,
     });
-    if (!resp.ok) throw new Error(`Entity registry PUT ${resp.status}: ${await resp.text()}`);
 
-    const updated = await resp.json() as Record<string, unknown>;
-    const deviceId = updated.device_id as string | null;
+    const deviceId = result.device_id as string | null;
     let deviceDisabled = false;
     if (deviceId) {
       try {
         const dev = await this.getDeviceRegistryEntry(deviceId);
         deviceDisabled = dev.disabled_by === "user";
       } catch {
-        // device may not exist — that's fine
+        // device may not exist
       }
     }
     return {
       entity_id: entityId,
-      entity_disabled: updated.disabled_by === "user",
+      entity_disabled: newDisabledBy === "user",
       device_id: deviceId,
       device_disabled: deviceDisabled,
     };
@@ -710,20 +706,15 @@ export class HaClient {
 
   async toggleDeviceDisabled(deviceId: string):
     Promise<{ device_id: string; disabled: boolean }> {
-    const entry = await this.getDeviceRegistryEntry(deviceId) as Record<string, unknown>;
-    const currentDisabled = (entry.disabled_by as string | null) === "user";
-    const payload: Record<string, unknown> = { disabled_by: currentDisabled ? null : "user" };
+    const entry = await this.getDeviceRegistryEntry(deviceId);
+    const currentDisabled = entry.disabled_by === "user";
+    const newDisabledBy = currentDisabled ? null : "user";
 
-    const restUrl = this.getRestUrl(`/api/config/device_registry/devices/${deviceId}`);
-    const resp = await fetch(restUrl, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${this.config.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      agent: () => this.getAgent(restUrl),
+    await this.send("config/device_registry/update", {
+      device_id: deviceId,
+      disabled_by: newDisabledBy,
     });
-    if (!resp.ok) throw new Error(`Device registry PUT ${resp.status}: ${await resp.text()}`);
-    const updated = await resp.json() as Record<string, unknown>;
-    return { device_id: deviceId, disabled: updated.disabled_by === "user" };
+    return { device_id: deviceId, disabled: newDisabledBy === "user" };
   }
 }
 
