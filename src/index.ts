@@ -11,14 +11,13 @@ const PROJECT_NAME = "pi-oikia";
 
 // ── Config ─────────────────────────────────────────────────────────
 
-function loadTierConfig(): { read: boolean; control: boolean; write: boolean; admin: boolean } {
+function loadTierConfig(): { read: boolean; control: boolean; write: boolean } {
   const config = loadFullConfig();
   const parsed = config.tiers ?? {};
   return {
     read: parsed.read ?? true,
     control: parsed.control ?? true,
     write: parsed.write ?? false,
-    admin: parsed.admin ?? false,
   };
 }
 
@@ -140,6 +139,7 @@ export default function (pi: ExtensionAPI) {
       pi.registerTool(makeGetErrorLog(c));
       pi.registerTool(makeRenderTemplate(c));
       pi.registerTool(makeTestCondition(c));
+      pi.registerTool(makeSupervisorInfo(c));
     }
 
     if (tiers.control) {
@@ -154,10 +154,6 @@ export default function (pi: ExtensionAPI) {
       pi.registerTool(makeGetEntityRegistryEntry(c));
       pi.registerTool(makeGetDeviceRegistryEntry(c));
       pi.registerTool(makeToggleDeviceDisabled(c));
-    }
-
-    if (tiers.admin) {
-      pi.registerTool(makeSupervisorInfo(c));
     }
   }
 

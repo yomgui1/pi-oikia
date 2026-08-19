@@ -22,7 +22,7 @@ This extension was born from a security and quality review of existing HA-AI con
 | Consent | Prompt-level (AGENTS.md text) | **Code-enforced `ctx.ui.confirm()`** |
 | Internal dirs | Exposed or prompt-blocked | **Code-blocked** |
 | Secrets | Exposed or prompt-blocked | **Never exposed** |
-| Tool granularity | Shell or 3 profiles | **Per-tier (read/control/write/admin)** |
+| Tool granularity | Shell or 3 profiles | **Per-tier (read/control/write)** |
 
 The risk is clear: an add-on compromise gives the attacker direct access to HA's internal filesystem, SSL certificates, backups, and the Supervisor admin API. pi-oikia eliminates that attack surface by running outside the HA container and communicating only via the stable WS/REST API with a scoped LLAT—no shell, no filesystem access.
 
@@ -48,7 +48,7 @@ The risk is clear: an add-on compromise gives the attacker direct access to HA's
 ### Key departures
 
 1. **PI runs locally, never inside HA** — no addon, no container, no SSH. The extension lives on the user machine and talks to HA over the WebSocket API.
-2. **Long-Lived Access Token (LLAT)** — not Supervisor token. The LLAT can be scoped read-only or read-write. The extension refuses Supervisor tokens (detected by 5+ JWT segments).
+2. **Long-Lived Access Token (LLAT)** — not Supervisor token. The LLAT can be scoped read-only or read-write. The extension logs a warning advising users to supply a user LLAT, not a Supervisor token.
 3. **No shell** — the extension registers only typed tools. No `bash`, no `fs`, no `read`, no `write`. The agent cannot escape the tool surface.
 4. **Code-enforced guards** — confirmation gates and path blocklists live in TypeScript, not in AGENTS.md text.
 
@@ -66,16 +66,16 @@ LLATs offer read-only or read-write (default). The extension refines further:
 
 | LLAT Scope | Default active tier |
 |---|---|
-| `read-only` | `read` | `control`, `write`, `admin` blocked |
-| `read-write` (default) | `read`, `control` | `admin` opt-in |
+| `read-only` | `read` | `control`, `write` blocked |
+| `read-write` (default) | `read`, `control` | `write` opt-in |
 
-The extension detects and refuses Supervisor admin tokens (5+ JWT segments).
+The extension logs a warning advising users to supply a user LLAT, not a Supervisor token.
 
 ### 3.3 Token storage
 
 - Project `.env` or encrypted PI project config
 
-Never in logs, tool output (`ha.get_state` etc), or LLM context. Redacted in error messages.
+Never in logs, tool output, or LLM context. By design, the token is never interpolated into user-facing strings.
 
 ---
 
@@ -85,16 +85,15 @@ Each tool declares a tier. Config enables/disables tiers.
 
 | Tier | Default | Confirm | Tools |
 |---|---|---|---|
-| `read` | ✅ Always | None | `get_state`, `get_services`, `get_config`, `get_history`, `get_logbook`, `get_devices`, `get_areas`, `get_home_context`, `get_entity_details`, `search_entities`, `get_error_log`, `render_template`, `test_condition` |
+| `read` | ✅ Always | `render_template` only | `get_state`, `get_services`, `get_config`, `get_history`, `get_logbook`, `get_devices`, `get_areas`, `get_home_context`, `get_entity_details`, `search_entities`, `get_error_log`, `render_template`, `test_condition`, `supervisor_info` |
 | `control` | ✅ On | Per-call | `call_service`, `toggle`, `fire_event`, `execute_script` |
-| `write` | ❌ Off | Per-call | `validate_config`, `get_entity_registry_entry`, `get_device_registry_entry`, `toggle_device_disabled` |
-| `admin` | ❌ Off | Per-call | `supervisor_info` |
+| `write` | ❌ Off | `toggle_device_disabled` only | `validate_config`, `get_entity_registry_entry`, `get_device_registry_entry`, `toggle_device_disabled` |
 
 Disabling a tier hides its tools: the agent cannot call them at all.
 
 ```json
 // config.json
-{ "tiers": { "read": true, "control": true, "write": false, "admin": false } }
+{ "tiers": { "read": true, "control": true, "write": false } }
 ```
 
 ---
@@ -103,7 +102,7 @@ Disabling a tier hides its tools: the agent cannot call them at all.
 
 The extension manages a WS connection to HA:
 
-1. Connects on `session_start` (lazy — first tool call triggers it)
+1. Connects on `session_start` (eager — connects immediately, tools registered after connect begins)
 2. Reconnects on disconnect with exponential backoff
 3. Authenticates via LLAT on each connection
 4. Closes on `session_shutdown`
@@ -170,5 +169,5 @@ If a tool without arguments returns unbounded data, it must have a filtered equi
 | Consent | **Code-enforced confirm()** |
 | Internal dirs | **Code-blocked** |
 | Secrets | **Never exposed** |
-| Tool granularity | **Per-tier (read/control/write/admin)** |
+| Tool granularity | **Per-tier (read/control/write)** |
 | Built-in tool guard | **tool_call event handler** |

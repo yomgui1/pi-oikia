@@ -3,7 +3,7 @@
 A [Pi](https://github.com/earendil-works/pi) / [Oh My Pi](https://github.com/ollama-hub/oh-my-pi) extension to control your Home Assistant.
 **The agent gets tools, not a shell!**
 
-**17 tools** across 4 permission tiers. Connect to HA over WebSocket with a scoped Long-Lived Access Token.
+**22 tools** across 3 permission tiers. Connect to HA over WebSocket with a scoped Long-Lived Access Token.
 
 This extension has been designed with a strong security goal in mind. HA controls your home!
 
@@ -77,14 +77,13 @@ Each tier permission is independently enabled/disabled in `config.json`.
 
 | Tier | Default | Confirm | Tools |
 |---|---|---|---|
-| `read` | ✅ | None | 13 tools: get_state, get_services, get_config, get_history, get_logbook, get_devices, get_areas, get_home_context, get_entity_details, search_entities, get_error_log, render_template, test_condition |
+| `read` | ✅ | `render_template` only | 14 tools: get_state, get_services, get_config, get_history, get_logbook, get_devices, get_areas, get_home_context, get_entity_details, search_entities, get_error_log, render_template, test_condition, supervisor_info |
 | `control` | ✅ | Per-call | 4 tools: call_service, toggle, fire_event, execute_script |
-| `write` | ❌ | None | 4 tools: validate_config, get_entity_registry_entry, get_device_registry_entry, toggle_device_disabled |
-| `admin` | ❌ | Per-call | 1 tool: supervisor_info |
+| `write` | ❌ | `toggle_device_disabled` only | 4 tools: validate_config, get_entity_registry_entry, get_device_registry_entry, toggle_device_disabled |
 
 ```json
 // config.json
-{ "tiers": { "read": true, "control": true, "write": false, "admin": false } }
+{ "tiers": { "read": true, "control": true, "write": false } }
 ```
 
 Disabling a tier removes its tools — the agent cannot call them at all.
