@@ -80,10 +80,15 @@ export default function (pi: ExtensionAPI) {
     _ctx = null;
   });
 
-  // Guard: block built-in tools from accessing protected HA paths
-  const PROTECTED_PATHS = [
+  /** Guard: block built-in tools from accessing protected HA paths.
+   * Format: [re, blockedTools, reason]
+   *  - re: regex to filter-in the path pattern.
+   *  - blockedTools: a tools list that should be blocked.
+   *  - reason: message given to user if the tool is blocked.
+   */
+  const PROTECTED_PATHS: Array<[RegExp, string[], string]> = [
     [/secrets\.yaml$/, ["read", "write"], "secrets.yaml is protected — never exposed to LLM"],
-    [/\.storage\//, ["write"], ".storage/ is internal HA state — use ha tools instead"],
+    [/\.storage\//, ["read", "write"], ".storage/ is protected — never exposed to LLM"],
     [/\.cloud\//, ["read", "write"], ".cloud/ is managed by HA Cloud"],
     [/\/deps\//, ["read", "write"], "deps/ is managed by HA Core"],
     [/\/home-assistant_v2\.db$/, ["read", "write"], "home-assistant_v2.db is internal HA database"],
@@ -96,8 +101,8 @@ export default function (pi: ExtensionAPI) {
       if (!resolved.startsWith("/config/")) {
         return { block: true, reason: `Path resolved outside config directory` };
       }
-      for (const [re, allowed, reason] of PROTECTED_PATHS as Array<[RegExp, string[], string]>) {
-        if (allowed.includes(toolName) && re.test(resolved)) {
+      for (const [re, blockedTools, reason] of PROTECTED_PATHS) {
+        if (blockedTools.includes(toolName) && re.test(resolved)) {
           return { block: true, reason };
         }
       }
