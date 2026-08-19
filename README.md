@@ -105,6 +105,28 @@ Spin up a local HA instance for smoke tests (better to use a local HA for testin
 docker compose -f tests/docker-compose.test.yml up -d
 ```
 
+### Live API test
+
+Test **all** tools (read, control, write) against a running HA instance. Disabled tiers are still exercised as regression checks and marked `⦿ skipped`:
+
+```bash
+HASS_URL=wss://your-ha:8123/api/websocket \
+HASS_TOKEN=your-long-lived-token \
+bun tests/test-live.ts
+```
+
+**CLI flags** override `config.json` tiers:
+
+| Flag | Effect |
+|------|--------|
+| `--read` / `--no-read` | Force read tier on/off |
+| `--control` / `--no-control` | Force control tier on/off |
+| `--write` / `--no-write` | Force write tier on/off |
+| `--insecure` | Skip TLS certificate validation |
+| `--help` | Show usage |
+
+Use `http://` URLs if HA isn't behind TLS.
+
 ## More
 
 - [DESIGN.md](DESIGN.md) — History, Architecture, token strategy, tool tiers, threat model
