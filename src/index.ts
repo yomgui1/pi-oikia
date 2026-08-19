@@ -566,6 +566,54 @@ export default function (pi: ExtensionAPI) {
     };
   }
 
+
+  function summarizeScriptSequence(sequence: unknown): string {
+    const actions: string[] = [];
+    const services: string[] = [];
+
+    function walk(item: unknown) {
+      if (!item || typeof item !== "object") return;
+      const obj = item as Record<string, unknown>;
+
+      if (Array.isArray(obj)) {
+        for (const entry of obj) walk(entry);
+        return;
+      }
+
+      for (const v of Object.values(obj)) {
+        if (v && typeof v === "object") walk(v);
+      }
+
+      if ("service" in obj && typeof obj.service === "string") {
+        const entity = obj.entity_id ?? "(all)";
+        services.push(`${obj.service} → ${entity}`);
+        return;
+      }
+
+      if ("condition" in obj) actions.push("condition");
+      else if ("delay" in obj || "duration" in obj) actions.push("delay");
+      else if (Object.keys(obj).length) actions.push(Object.keys(obj)[0]);
+    }
+
+    const seq = Array.isArray(sequence) ? sequence : [sequence];
+    for (const item of seq) walk(item);
+
+    const lines = [`Script contains ${seq.length} action(s):`];
+
+    if (services.length) {
+      const unique = [...new Set(services)];
+      lines.push(`  Service calls: ${unique.join(", ")}`);
+    }
+    if (actions.length) {
+      const counts: Record<string, number> = {};
+      for (const a of actions) counts[a] = (counts[a] ?? 0) + 1;
+      const summary = Object.entries(counts).map(([k, v]) => `${k} ×${v}`).join(", ");
+      lines.push(`  Other: ${summary}`);
+    }
+
+    return lines.join("\n");
+  }
+
   /**
    * Execute an automation script in Home Assistant.
    * Confirm-gated via ctx.ui.confirm. Annotated as destructive.
@@ -579,13 +627,17 @@ export default function (pi: ExtensionAPI) {
       description:
         "Execute an automation script in Home Assistant. Pass a sequence array or a single action object.",
       parameters: Type.Object({
-        sequence: Type.Unknown({ description: "Script sequence (array of actions) or a single action object" }),
+        sequence: Type.Union([
+          Type.Record(Type.String(), Type.Unknown(), { description: "Single action object (e.g. { service: 'light.turn_on', entity_id: 'light.kitchen' })" }),
+          Type.Array(Type.Record(Type.String(), Type.Unknown()), { description: "Array of actions" }),
+        ]),
       }),
       annotations: { destructive: true, idempotent: false },
       async execute(_id, params, _signal, _onUpdate, ctx) {
+        const summary = summarizeScriptSequence(params.sequence);
         const approved = await ctx.ui.confirm(
           "Execute Script",
-          `Execute script:\n${JSON.stringify(params.sequence)}\n\nConfirm to proceed.`
+          `Execute automation script:\n\n${summary}\n\nConfirm to proceed.`
         );
         if (!approved) return { content: [{ type: "text", text: "Script execution rejected by user." }] };
         await client.executeScript(params.sequence);
