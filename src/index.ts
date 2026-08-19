@@ -499,7 +499,7 @@ export default function (pi: ExtensionAPI) {
         const resp = await fetch(restUrl, {
           method: "POST",
           headers: { Authorization: `Bearer ${client.config.token}` },
-          agent: client.agent,
+          agent: () => client.getAgent(restUrl),
         });
         if (!resp.ok) throw new Error(`Config validation failed (${resp.status}): ${await resp.text()}`);
         return { content: [{ type: "text", text: "Configuration is valid." }] };
@@ -777,10 +777,14 @@ export default function (pi: ExtensionAPI) {
         "Get Home Assistant Supervisor information. Only works on HA OS/Supervisor installs (not Docker or Core). Returns version info and health status.",
       parameters: Type.Object({}),
       async execute() {
-        const resp = await fetch(
-          client.config.url.replace(/^ws(s)?:\/\//, "http://").replace(/\/api\/websocket$/, "") + "/api/supervisor/info",
-          { headers: { Authorization: `Bearer ${client.config.token}` }, agent: client.agent }
-        );
+        const restUrl = client.config.url
+          .replace(/^ws(s)?:\/\//, "http$1://")
+          .replace(/\/api\/websocket$/, "")
+          + "/api/supervisor/info";
+        const resp = await fetch(restUrl, {
+          headers: { Authorization: `Bearer ${client.config.token}` },
+          agent: () => client.getAgent(restUrl),
+        });
         if (resp.status === 404) return { content: [{ type: "text", text: "Not running on Home Assistant OS/Supervisor." }] };
         if (!resp.ok) throw new Error(`Supervisor info failed (${resp.status})`);
         return { content: [{ type: "text", text: JSON.stringify(await resp.json(), null, 2) }] };

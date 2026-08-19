@@ -1,5 +1,6 @@
 import { WebSocket } from "ws";
 import https from "node:https";
+import http from "node:http";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -109,17 +110,22 @@ export class HaClient {
     this._config = config;
   }
 
-  /** https.Agent for fetch/WS calls — respects insecure config flag. */
-  protected get _agent(): https.Agent {
+  /** https.Agent for WS + HTTPS REST calls — respects insecure config flag. */
+  protected get _httpsAgent(): https.Agent {
     if (this._config.insecure) {
       return new https.Agent({ rejectUnauthorized: false });
     }
     return https.globalAgent;
   }
 
-  /** Public accessor for agent, used by index.ts fetch calls. */
-  get agent(): https.Agent {
-    return this._agent;
+  /** http.Agent — mirrors _httpsAgent for plain-HTTP REST calls. */
+  protected get _httpAgent(): http.Agent {
+    return http.globalAgent;
+  }
+
+  /** Pick the correct agent for a URL by scheme (ws/wss/https/http all supported). */
+  getAgent(url: string): http.Agent | https.Agent {
+    return url.startsWith("wss") || url.startsWith("https") ? this._httpsAgent : this._httpAgent;
   }
 
   /** Whether a live WS connection is established. */
@@ -142,7 +148,7 @@ export class HaClient {
     }
 
     await new Promise<void>((resolve, reject) => {
-      this.ws = new WebSocket(this.config.url, { agent: this._agent });
+      this.ws = new WebSocket(this.config.url, { agent: this.getAgent(this.config.url) });
       const authTimeout = setTimeout(() => {
         this.ws?.close();
         this.ws = null;
@@ -394,9 +400,10 @@ export class HaClient {
 
     // 1) error_log REST (Supervisor add-on — primary source)
     try {
-      const resp = await fetch(this.getRestUrl("/error_log"), {
+      const errorLogUrl = this.getRestUrl("/error_log");
+      const resp = await fetch(errorLogUrl, {
         headers: { Authorization: `Bearer ${this.config.token}` },
-        agent: () => this._agent,
+        agent: () => this.getAgent(errorLogUrl),
       });
       if (resp.ok) {
         const text = await resp.text();
@@ -435,13 +442,12 @@ export class HaClient {
 
     throw new Error("No log source available (error_log add-on not present, logbook empty)");
   }
-
   async getEntityState(entityId: string): Promise<EntityState | { entity_id: string; state: "not_found"; attributes: {}; last_changed: string; last_updated: string }> {
     await this.connect();
     const restUrl = this.getRestUrl(`/api/states/${entityId}`);
     const resp = await fetch(restUrl, {
       headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => this._agent,
+      agent: () => this.getAgent(restUrl),
     });
     if (resp.status === 404) return { entity_id: entityId, state: "not_found", attributes: {}, last_changed: "", last_updated: "" };
     if (!resp.ok) throw new Error(`HA API ${resp.status}: ${await resp.text()}`);
@@ -483,9 +489,10 @@ export class HaClient {
       filter_entity_id: entityIds.join(","),
       minimal_response: "true",
     });
-    const resp = await fetch(`${restUrl}/${start}?${params}`, {
+    const fetchUrl = `${restUrl}/${start}?${params}`;
+    const resp = await fetch(fetchUrl, {
       headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => this._agent,
+      agent: () => this.getAgent(fetchUrl),
     });
     if (!resp.ok) throw new Error(`HA API ${resp.status}: ${await resp.text()}`);
     const groupByEntity = (await resp.json()) as HistoryRecord[][];
@@ -538,7 +545,7 @@ export class HaClient {
     if (entityId) params.set("entity", entityId);
     const resp = await fetch(`${restUrl}/${start}?${params}`, {
       headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => this._agent,
+      agent: () => this.getAgent(restUrl),
     });
     if (!resp.ok) throw new Error(`HA API ${resp.status}: ${await resp.text()}`);
     return resp.json();
@@ -655,12 +662,10 @@ export class HaClient {
   // ── Device/Entity registry management ────────────────────────────
 
   async getEntityRegistryEntry(entityId: string) {
-    const resp = await fetch(this.getRestUrl(`/api/config/entity_registry/entries/${encodeURIComponent(entityId)}`), {
-      headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => this._agent,
-    });
-    if (!resp.ok) throw new Error(`Entity registry ${resp.status}: ${await resp.text()}`);
-    return resp.json();
+    const entries = await this.getEntityRegistry();
+    const entry = entries.find((e) => e.entity_id === entityId);
+    if (!entry) throw new Error(`Entity ${entityId} not found in registry`);
+    return entry;
   }
 
   async toggleEntityDisabled(entityId: string):
@@ -673,7 +678,7 @@ export class HaClient {
       method: "PUT",
       headers: { Authorization: `Bearer ${this.config.token}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      agent: () => this._agent,
+      agent: () => this.getAgent(this.getRestUrl("/")),
     });
     if (!resp.ok) throw new Error(`Entity registry PUT ${resp.status}: ${await resp.text()}`);
 
@@ -682,33 +687,25 @@ export class HaClient {
     let deviceDisabled = false;
     if (deviceId) {
       try {
-        const devResp = await fetch(this.getRestUrl(`/api/config/device_registry/devices/${deviceId}`), {
-          headers: { Authorization: `Bearer ${this.config.token}` },
-          agent: () => this._agent,
-        });
-        if (devResp.ok) {
-          const dev = await devResp.json() as Record<string, unknown>;
-          deviceDisabled = (dev.disabled_by as string | null) === "user";
-        }
+        const dev = await this.getDeviceRegistryEntry(deviceId);
+        deviceDisabled = dev.disabled_by === "user";
       } catch {
         // device may not exist — that's fine
       }
     }
     return {
       entity_id: entityId,
-      entity_disabled: (updated.disabled_by as string | null) === "user",
+      entity_disabled: updated.disabled_by === "user",
       device_id: deviceId,
       device_disabled: deviceDisabled,
     };
   }
 
   async getDeviceRegistryEntry(deviceId: string) {
-    const resp = await fetch(this.getRestUrl(`/api/config/device_registry/devices/${deviceId}`), {
-      headers: { Authorization: `Bearer ${this.config.token}` },
-      agent: () => this._agent,
-    });
-    if (!resp.ok) throw new Error(`Device registry ${resp.status}: ${await resp.text()}`);
-    return resp.json();
+    const devices = await this.getDevices();
+    const entry = devices.find((d) => d.id === deviceId);
+    if (!entry) throw new Error(`Device ${deviceId} not found in registry`);
+    return entry;
   }
 
   async toggleDeviceDisabled(deviceId: string):
@@ -717,15 +714,16 @@ export class HaClient {
     const currentDisabled = (entry.disabled_by as string | null) === "user";
     const payload: Record<string, unknown> = { disabled_by: currentDisabled ? null : "user" };
 
-    const resp = await fetch(this.getRestUrl(`/api/config/device_registry/devices/${deviceId}`), {
+    const restUrl = this.getRestUrl(`/api/config/device_registry/devices/${deviceId}`);
+    const resp = await fetch(restUrl, {
       method: "PUT",
       headers: { Authorization: `Bearer ${this.config.token}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      agent: () => this._agent,
+      agent: () => this.getAgent(restUrl),
     });
     if (!resp.ok) throw new Error(`Device registry PUT ${resp.status}: ${await resp.text()}`);
     const updated = await resp.json() as Record<string, unknown>;
-    return { device_id: deviceId, disabled: (updated.disabled_by as string | null) === "user" };
+    return { device_id: deviceId, disabled: updated.disabled_by === "user" };
   }
 }
 
@@ -747,6 +745,7 @@ interface Device {
   manufacturer?: string;
   name?: string;
   name_by_user?: string;
+  disabled_by?: string | null;
 }
 
 interface ServiceSpec {
@@ -768,6 +767,7 @@ interface EntityRegistryEntry {
   device_id: string | null;
   name?: string;
   original_name?: string;
+  disabled_by?: string | null;
 }
 
 interface LogbookEntry {
