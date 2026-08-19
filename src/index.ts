@@ -50,11 +50,10 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    const segments = token.split(".");
-    if (segments.length >= 5) {
-      ctx.ui.notify(`${PROJECT_NAME}: token appears to be a Supervisor token — use a user LLAT instead`, "error");
-      return;
-    }
+    ctx.ui.notify(
+      `${PROJECT_NAME}: ensure HASS_TOKEN is a user Long-Lived Access Token (not a Supervisor token)`,
+      "warn"
+    );
 
     const httpInsecure = process.env.HASS_INSECURE === "1" || process.env.HASS_INSECURE === "true" || loadFullConfig().httpInsecure === true;
     client = new HaClient({ url, token, insecure: httpInsecure });
