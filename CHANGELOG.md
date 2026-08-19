@@ -1,5 +1,18 @@
 # Changelog — pi-oikia
 
+## v0.4.0
+
+- **Security hardening** — Path guards now block `.storage/` reads (not just writes). Renamed `PROTECTED_PATHS` field from `allowed` to `blockedTools` to fix inverted semantics.
+- **Confirmation gate on `render_template`** — Added `ctx.ui.confirm()` gate and MCP annotations to prevent unsupervised Jinja2 template execution.
+- **Script summarization for `execute_script`** — Added `summarizeScriptSequence()` helper to display a readable summary of automation scripts in the confirmation dialog. Enforced single-action or array-of-single-actions constraint.
+- **Removed weak Supervisor token heuristic** — Dropped `token.split(".").length >= 5` check (never triggered for valid tokens). Replaced with a user warning notification instead of an error.
+- **Removed `.env` auto-loading** — Environment variables (`HASS_TOKEN`, `HASS_URL`) are now the user's responsibility to configure before running the extension.
+- **Removed admin tier** — The `admin` tier contained only `supervisor_info`, a read-only tool. Moved it to `read` tier; `loadTierConfig()` now returns `{ read, control, write }` (3 tiers instead of 4).
+- **Documentation fixes** — Updated README.md and DESIGN.md to match code: correct tool count (22), correct tier count (3), accurate confirm columns, eager connection lifecycle, and honest token strategy claims.
+- **WebSocket agent fix** — Split `https.Agent` into per-scheme `_httpAgent`/`_httpsAgent` + `getAgent(url)` to fix Bun `fetch()` socket closure on `http://` URLs and correct `ws://` connections always receiving `https.Agent`.
+- **Registry mutation migration** — `toggleEntityDisabled` and `toggleDeviceDisabled` migrated from REST PATCH to WebSocket `config/entity_registry/update` and `config/device_registry/update` (REST endpoints unavailable on Docker HA Core).
+- **Live test suite** — Added `tests/test-live.ts` exercising all 24 API methods across read/control/write tiers with CLI flags (`--read`, `--control`, `--write`, `--insecure`).
+
 ## v0.3.0
 
 - **Secure-by-default TLS** — Connection is secure by default. Added `HASS_INSECURE` env var and `config.json.httpInsecure` to opt-in to unverified TLS when running with self-signed certs.
