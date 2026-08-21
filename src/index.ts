@@ -21,7 +21,7 @@ function loadTierConfig(): { read: boolean; control: boolean; write: boolean } {
   };
 }
 
-function loadFullConfig(): { tiers?: Record<string, boolean>; httpInsecure?: boolean } {
+function loadFullConfig(): { tiers?: Record<string, boolean>; httpInsecure?: boolean; statusFormat?: string } {
   const configPath = join(__dirname, "..", "config.json");
   if (!existsSync(configPath)) return {};
   try {
@@ -38,13 +38,43 @@ export default function (pi: ExtensionAPI) {
   let client: HaClient | null = null;
   let shuttingDown = false;
   let _ctx: ExtensionContext | null = null;
+  // Status-line helper. _statusFormat is populated once in session_start
+  // (env > config > "default"). Set "off" to hide.
+  let _statusFormat: string = "default";
+  function setStatusLine(state: "idle" | "connecting" | "connected" | "error", err?: string): void {
+    if (_statusFormat === "off") return;
+    const host = new URL(client!.config.url).host;
+    const project = PROJECT_NAME;
+    const icon = state === "connected" ? "✓"
+               : state === "connecting" ? "…"
+               : state === "error"      ? "✗"
+               : "";
+    let text: string;
+    if (_statusFormat === "minimal") {
+      text = state === "idle"        ? "ha: idle"
+           : state === "error"       ? `ha ✗ ${err ?? "unknown error"}`
+           :                            `ha ${icon}`;
+    } else if (_statusFormat === "compact") {
+      text = state === "idle"        ? `${project} → ha: idle`
+           : state === "error"       ? `${project} → ha ✗ ${err ?? "unknown error"}`
+           :                            `${project} → ha ${icon}`;
+    } else {
+      // default (also catches unknown values)
+      text = state === "idle"        ? `${project}: idle`
+           : state === "error"       ? `${project} → ${host}: ${err ?? "unknown error"}`
+           : state === "connecting"  ? `${project} → ${host}: connecting`
+           :                            `${project} → ${host}: connected`;
+    }
+    _ctx?.ui.setStatus("ha", text);
+  }
+
 
   pi.on("session_start", async (_event, ctx) => {
     _ctx = ctx;
     const url = process.env.HASS_URL ?? "ws://localhost:8123/api/websocket";
     const token = process.env.HASS_TOKEN;
     if (!token) {
-      ctx.ui.setStatus("ha", "No HASS_TOKEN set — extension idle");
+      setStatusLine("idle");
       ctx.ui.notify(`${PROJECT_NAME}: set HASS_TOKEN in .env to enable`, "warn");
       return;
     }
@@ -56,15 +86,18 @@ export default function (pi: ExtensionAPI) {
 
     const httpInsecure = process.env.HASS_INSECURE === "1" || process.env.HASS_INSECURE === "true" || loadFullConfig().httpInsecure === true;
     client = new HaClient({ url, token, insecure: httpInsecure });
+    _statusFormat = process.env.HASS_STATUS_FORMAT
+                 ?? loadFullConfig().statusFormat
+                 ?? "default";
 
     const host = new URL(url).host;
-    ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connecting`);
+    setStatusLine("connecting");
     (async () => {
       try {
         await client!.connect();
-        ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connected`);
+        setStatusLine("connected");
       } catch (err) {
-        ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: ${err instanceof Error ? err.message : "unknown error"}`);
+        setStatusLine("error", err instanceof Error ? err.message : "unknown error");
       }
     })();
 
@@ -113,9 +146,9 @@ export default function (pi: ExtensionAPI) {
     const host = new URL(c.config.url).host;
     try {
       await c.connect();
-      _ctx?.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connected`);
+      setStatusLine("connected");
     } catch (err) {
-      _ctx?.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: ${err instanceof Error ? err.message : "unknown error"}`);
+      setStatusLine("error", err instanceof Error ? err.message : "unknown error");
       throw err;
     }
     return c;

@@ -71,6 +71,40 @@ pi-oikia needs the two environment variables `HASS_URL` and `HASS_TOKEN`:
 
 3. Run `pi` or `omp` — tools register on session start
 
+## Status line format
+
+By default, `pi-oikia` writes a status line to the agent's status bar:
+
+```
+pi-oikia → ha-host:8123: connected
+```
+
+You can change this with `HASS_STATUS_FORMAT` (environment variable) or
+`statusFormat` (key in `config.json`). Env takes precedence.
+
+| Value | Effect |
+|---|---|
+| `default` *(default, backward compatible)* | `pi-oikia → host: connected` |
+| `compact` | `pi-oikia → ha ✓` / `→ ha …` / `→ ha ✗ <err>` |
+| `minimal` | `ha ✓` / `ha …` / `ha ✗ <err>` / `ha: idle` |
+| `off` | do not call `setStatus` at all |
+
+Examples:
+
+```bash
+# Env (highest priority)
+HASS_STATUS_FORMAT=compact pi
+```
+
+```jsonc
+// config.json — same options, lower priority than env
+{
+  "tiers": { "read": true, "control": true, "write": false },
+  "statusFormat": "compact"
+}
+```
+
+Unknown values fall through to `default`. No error is raised.
 ## Tool Tiers
 
 Each tier permission is independently enabled/disabled in `config.json`.
