@@ -89,6 +89,21 @@ export interface ErrorLogResult {
   meta: { requested_lines: number; returned_lines: number; source: string; fallback_used: boolean };
 }
 
+export interface EnergyDevice {
+  stat_consumption: string;
+  name?: string;
+  type?: "consumption";
+}
+
+export interface EnergyPreferences {
+  energy_sources?: Record<string, unknown>[];
+  device_consumption?: EnergyDevice[];
+  device_consumption_water?: EnergyDevice[];
+  cost_controls?: Record<string, unknown>[];
+  solar_forecast?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 // ── WebSocket client ───────────────────────────────────────────────
 
 export class HaClient {
@@ -715,6 +730,19 @@ export class HaClient {
       disabled_by: newDisabledBy,
     });
     return { device_id: deviceId, disabled: newDisabledBy === "user" };
+  }
+  async getEnergyPreferences(): Promise<EnergyPreferences> {
+    return this.send<any>("energy/get_prefs") as Promise<EnergyPreferences>;
+  }
+
+  async saveEnergyPreferences(prefs: Partial<EnergyPreferences>): Promise<void> {
+    const payload: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(prefs)) {
+      if (v !== undefined && !(Array.isArray(v) && v.length === 0) && !(v instanceof Object && Object.keys(v).length === 0)) {
+        payload[k] = v;
+      }
+    }
+    await this.send("energy/save_prefs", payload as Record<string, unknown>);
   }
 }
 

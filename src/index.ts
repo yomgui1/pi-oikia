@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { HaClient } from "./client";
+import { HaClient, type EnergyDevice, type EnergyPreferences } from "./client";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
@@ -154,6 +154,7 @@ export default function (pi: ExtensionAPI) {
       pi.registerTool(makeGetEntityRegistryEntry(c));
       pi.registerTool(makeGetDeviceRegistryEntry(c));
       pi.registerTool(makeToggleDeviceDisabled(c));
+      pi.registerTool(makeAddEnergyDevice(c));
     }
   }
 
@@ -788,6 +789,54 @@ export default function (pi: ExtensionAPI) {
         if (resp.status === 404) return { content: [{ type: "text", text: "Not running on Home Assistant OS/Supervisor." }] };
         if (!resp.ok) throw new Error(`Supervisor info failed (${resp.status})`);
         return { content: [{ type: "text", text: JSON.stringify(await resp.json(), null, 2) }] };
+      },
+    };
+  }
+
+  /**
+   * Add a power sensor to the Home Assistant Energy dashboard as a tracked device.
+   * The stat_power entity must have device_class: 'power'.
+   * Idempotent: does nothing if the device is already registered.
+   */
+  function makeAddEnergyDevice(client: HaClient) {
+    return {
+      name: "ha.add_energy_device",
+      label: "HA Add Energy Device",
+      description:
+        "Add an energy sensor to the Home Assistant Energy dashboard as a tracked device. " +
+        "The stat_consumption entity must have device_class: 'energy' (kWh). " +
+        "Idempotent: does nothing if the device is already registered.",
+      parameters: Type.Object({
+        stat_consumption: Type.String({
+          description: "Entity id of the **energy** sensor to track (must be kWh / device_class: energy)",
+        }),
+        name: Type.Optional(Type.String({ description: "Display name in the Energy dashboard" })),
+      }),
+      annotations: { destructive: true, idempotent: false },
+      async execute(_id, params, _signal, _onUpdate, ctx) {
+        const devName = params.name || params.stat_consumption;
+        const approved = await ctx.ui.confirm(
+          "Add Energy Device",
+          `Add ${params.stat_consumption} as "${devName}" to Energy dashboard devices?\n\nConfirm to proceed.`
+        );
+        if (!approved) return { content: [{ type: "text", text: "Cancelled." }] };
+
+        const prefs = await client.getEnergyPreferences();
+        const devices = (prefs.device_consumption as EnergyDevice[]) || [];
+
+        if (devices.some((d) => d.stat_consumption === params.stat_consumption)) {
+          return { content: [{ type: "text", text: `Already registered: ${params.stat_consumption}` }] };
+        }
+
+        devices.push({ stat_consumption: params.stat_consumption, name: devName });
+
+        await client.saveEnergyPreferences({ device_consumption: devices });
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({ action: "added", stat_consumption: params.stat_consumption, name: devName }, null, 2),
+          }],
+        };
       },
     };
   }
