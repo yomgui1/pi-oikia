@@ -1,5 +1,11 @@
 # Changelog — pi-oikia
 
+## v0.5.0
+
+- **New tool: `ha.add_energy_device`** — Register kWh sensors as tracked devices in the Energy dashboard via WebSocket API (`energy/get_prefs`, `energy/save_prefs`). Added `getEnergyPreferences()` and `saveEnergyPreferences()` to HaClient.
+- **Service call response capture** — `call_service` now requests `return_response: true` from HA's WebSocket API. Services like `recorder.get_statistics` can now return their actual JSON responses instead of a generic "success" message.
+- **Gallery discovery** — Added `pi-package` keyword to `package.json` for automatic discovery on pi.dev gallery.
+
 ## v0.4.0
 
 - **Security hardening** — Path guards now block `.storage/` reads (not just writes). Renamed `PROTECTED_PATHS` field from `allowed` to `blockedTools` to fix inverted semantics.
