@@ -452,8 +452,8 @@ export default function (pi: ExtensionAPI) {
           `Call ${target}${params.data ? `\ndata: ${JSON.stringify(params.data)}` : ""}?\n\nConfirm to proceed.`
         );
         if (!approved) return { content: [{ type: "text", text: "Service call rejected by user." }] };
-        await client.send("call_service", { domain: params.domain, service: params.service, service_data: params.data });
-        return { content: [{ type: "text", text: `Service ${target} called successfully.` }] };
+        const result = await client.send("call_service", { domain: params.domain, service: params.service, service_data: params.data, return_response: true });
+        return { content: [{ type: "text", text: `Service ${target}: ${JSON.stringify(result)}` }] };
       },
     };
   }
