@@ -1,5 +1,9 @@
 # Changelog — pi-oikia
 
+## v0.6.0
+
+- Status line format customizable from an idea given by leen <leen2175@outlook.com> (PR#1)
+
 ## v0.5.0
 
 - **New tool: `ha.add_energy_device`** — Register kWh sensors as tracked devices in the Energy dashboard via WebSocket API (`energy/get_prefs`, `energy/save_prefs`). Added `getEnergyPreferences()` and `saveEnergyPreferences()` to HaClient.
