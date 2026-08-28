@@ -8,11 +8,11 @@ import { existsSync, readFileSync } from "node:fs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROJECT_NAME = "pi-oikia";
+let config = {};
 
 // ── Config ─────────────────────────────────────────────────────────
 
 function loadTierConfig(): { read: boolean; control: boolean; write: boolean } {
-  const config = loadFullConfig();
   const parsed = config.tiers ?? {};
   return {
     read: parsed.read ?? true,
@@ -21,14 +21,13 @@ function loadTierConfig(): { read: boolean; control: boolean; write: boolean } {
   };
 }
 
-function loadFullConfig(): { tiers?: Record<string, boolean>; httpInsecure?: boolean } {
+function loadFullConfig(): { tiers?: Record<string, boolean>; httpInsecure?: boolean; statusFormat?: string } {
   const configPath = join(__dirname, "..", "config.json");
   if (!existsSync(configPath)) return {};
   try {
     const raw = readFileSync(configPath, "utf8");
-    return JSON.parse(raw) as { tiers?: Record<string, boolean>; httpInsecure?: boolean };
+    config = JSON.parse(raw) as { tiers?: Record<string, boolean>; httpInsecure?: boolean };
   } catch {
-    return {};
   }
 }
 
@@ -38,13 +37,47 @@ export default function (pi: ExtensionAPI) {
   let client: HaClient | null = null;
   let shuttingDown = false;
   let _ctx: ExtensionContext | null = null;
+  // Status-line helper. _statusFormat is populated once in session_start
+  // (env > config > "full"). Set "off" to hide.
+  let _statusFormat: string = "full";
+
+  function setStatusLine(state: "idle" | "connecting" | "connected" | "error", err?: string): void {
+    if (_statusFormat === "off") return;
+    const project = PROJECT_NAME;
+    const icon = state === "connected" ? "✓"
+               : state === "connecting" ? "…"
+               : state === "error"      ? "✗"
+               : "";
+    let text: string;
+    if (_statusFormat === "minimal") {
+      text = state === "idle"        ? "ha: idle"
+           : state === "error"       ? `ha ✗ ${err ?? "unknown error"}`
+           :                            `ha ${icon}`;
+    } else if (_statusFormat === "compact") {
+      text = state === "idle"        ? `${project} → ha: idle`
+           : state === "error"       ? `${project} → ha ✗ ${err ?? "unknown error"}`
+           :                            `${project} → ha ${icon}`;
+    } else {
+      // full (also catches unknown values)
+      if (state === "idle")
+      {
+        text = `${project}: idle`;
+      } else {
+        const host = new URL(client!.config.url).host;
+        text = state === "error"       ? `${project} → ${host}: ${err ?? "unknown error"}`
+             : state === "connecting"  ? `${project} → ${host}: connecting`
+             :                            `${project} → ${host}: connected`;
+      }
+    }
+    _ctx?.ui.setStatus("ha", text);
+  }
 
   pi.on("session_start", async (_event, ctx) => {
     _ctx = ctx;
     const url = process.env.HASS_URL ?? "ws://localhost:8123/api/websocket";
     const token = process.env.HASS_TOKEN;
     if (!token) {
-      ctx.ui.setStatus("ha", "No HASS_TOKEN set — extension idle");
+      setStatusLine("idle");
       ctx.ui.notify(`${PROJECT_NAME}: set HASS_TOKEN in .env to enable`, "warn");
       return;
     }
@@ -54,17 +87,19 @@ export default function (pi: ExtensionAPI) {
       "warn"
     );
 
-    const httpInsecure = process.env.HASS_INSECURE === "1" || process.env.HASS_INSECURE === "true" || loadFullConfig().httpInsecure === true;
+    loadFullConfig();    
+    const httpInsecure = process.env.HASS_INSECURE === "1" || process.env.HASS_INSECURE === "true" || config.httpInsecure === true;
     client = new HaClient({ url, token, insecure: httpInsecure });
+    _statusFormat = process.env.PIOKIA_STATUS_FORMAT ?? config.statusFormat ?? "full";
 
     const host = new URL(url).host;
-    ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connecting`);
+    setStatusLine("connecting");
     (async () => {
       try {
         await client!.connect();
-        ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connected`);
+        setStatusLine("connected");
       } catch (err) {
-        ctx.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: ${err instanceof Error ? err.message : "unknown error"}`);
+        setStatusLine("error", err instanceof Error ? err.message : "unknown error");
       }
     })();
 
@@ -113,9 +148,9 @@ export default function (pi: ExtensionAPI) {
     const host = new URL(c.config.url).host;
     try {
       await c.connect();
-      _ctx?.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: connected`);
+      setStatusLine("connected");
     } catch (err) {
-      _ctx?.ui.setStatus("ha", `${PROJECT_NAME} → ${host}: ${err instanceof Error ? err.message : "unknown error"}`);
+      setStatusLine("error", err instanceof Error ? err.message : "unknown error");
       throw err;
     }
     return c;
